@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid #ddd;
+        }
+        
+        .chat-header {
+            background: white;
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            text-align: center;
+        }
+
+        .chat-header h2 {
+            color: #333;
+            font-size: 18px;
+            font-weight: normal;
+        }
+        
+        .messages {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            background: white;
+        }
+
+        .messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .messages::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .messages::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 3px;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 6px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .message.own {
+            background: #e3f2fd;
+            color: #333;
+            margin-left: auto;
+            text-align: right;
+            border: 1px solid #bbdefb;
+        }
+
+        .message.other {
+            background: #f5f5f5;
+            color: #333;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .message-info {
+            font-size: 11px;
+            margin-bottom: 5px;
+            color: #666;
+            font-weight: normal;
+        }
+
+        .message-text {
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .input-area {
+            background: white;
+            padding: 20px;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .username-input {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 150px;
+            font-size: 14px;
+        }
+
+        .username-input:focus {
+            outline: none;
+            border-color: #2196f3;
+        }
+        
+        .message-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .message-input:focus {
+            outline: none;
+            border-color: #2196f3;
+        }
+        
+        .send-button {
+            padding: 10px 20px;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .send-button:hover:not(:disabled) {
+            background: #1976d2;
+        }
+        
+        .send-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .connected {
+            color: #4caf50;
+        }
+        
+        .disconnected {
+            color: #f44336;
+        }
+
+        .user-id {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .input-area {
+                flex-direction: column;
+            }
+
+            .username-input {
+                width: 100%;
+            }
+
+            .message {
+                max-width: 90%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h2>Chat</h2>
+            <div id="status" class="status disconnected">Csatlakozás...</div>
+            <div id="userId" class="user-id"></div>
+        </div>
+        
+        <div id="messages" class="messages"></div>
+        
+        <div class="input-area">
+            <input type="text" id="username" class="username-input" placeholder="Név">
+            <input type="text" id="messageInput" class="message-input" placeholder="Üzenet..." disabled>
+            <button id="sendButton" class="send-button" disabled>Küldés</button>
+        </div>
+    </div>
+
+    <script>
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const usernameInput = document.getElementById('username');
+        const statusDiv = document.getElementById('status');
+        const userIdDiv = document.getElementById('userId');
+
+        let socket;
+        let connected = false;
+        let currentUserId = '';
+
+        function connectWebSocket() {
+            socket = new WebSocket('ws://localhost:5000');
+            
+            socket.onopen = function() {
+                connected = true;
+                statusDiv.textContent = 'Csatlakozva';
+                statusDiv.className = 'status connected';
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+            };
+            
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'init') {
+                        currentUserId = data.userId;
+                        userIdDiv.textContent = 'ID: ' + currentUserId;
+                        messagesDiv.innerHTML = '';
+                        data.messages.forEach(message => {
+                            displayMessage(message);
+                        });
+                        scrollToBottom();
+                    } else if (data.type === 'message') {
+                        displayMessage(data.data);
+                        scrollToBottom();
+                    }
+                } catch (error) {
+                    console.error('Üzenet feldolgozási hiba:', error);
+                }
+            };
+            
+            socket.onclose = function() {
+                connected = false;
+                statusDiv.textContent = 'Kapcsolat megszakadt';
+                statusDiv.className = 'status disconnected';
+                messageInput.disabled = true;
+                sendButton.disabled = true;
+                
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            socket.onerror = function(error) {
+                console.error('WebSocket hiba:', error);
+            };
+        }
+
+        function displayMessage(message) {
+            const messageDiv = document.createElement('div');
+            const isOwn = message.userId === currentUserId;
+            
+            messageDiv.className = `message ${isOwn ? 'own' : 'other'}`;
+            
+            messageDiv.innerHTML = `
+                <div class="message-info">${escapeHtml(message.username || 'Névtelen')} - ${message.timestamp}</div>
+                <div class="message-text">${escapeHtml(message.text)}</div>
+            `;
+            
+            messagesDiv.appendChild(messageDiv);
+        }
+
+        function scrollToBottom() {
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            const username = usernameInput.value.trim() || 'Névtelen';
+            
+            if (text && connected) {
+                const message = {
+                    username: username,
+                    text: text,
+                    timestamp: new Date().toLocaleTimeString('hu-HU', { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    })
+                };
+                
+                socket.send(JSON.stringify(message));
+                messageInput.value = '';
+            }
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        connectWebSocket();
+    </script>
+</body>
+</html>
